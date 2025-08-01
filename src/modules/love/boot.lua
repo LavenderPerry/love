@@ -59,23 +59,45 @@ function love.boot()
 	no_game_code = false
 	invalid_game_path = nil
 
-	-- Is this one of those fancy "fused" games?
-	local can_has_game = pcall(love.filesystem.setSource, exepath)
+	local can_has_game
+	local game_arg
 
-	-- It's a fused game, don't parse --game argument
-	if can_has_game then
-		love.arg.options.game.set = true
+	-- Handle Foxglove specific values given through a restart.
+	if type(love.restart) == "table" then
+		if type(love.restart.foxglove_launch_game) == "string" then
+			game_arg = love.restart.foxglove_launch_game
+		end
+		if type(love.restart.foxglove_mods) == "table" then
+			-- TODO: apply mods
+		end
+		if love.restart.foxglove_replace_restartval then
+			love.restart = love.restart.foxglove_restartval
+		end
 	end
 
-	-- Parse options now that we know which options we're looking for.
-	love.arg.parseOptions(love.rawGameArguments)
+	local is_fused_game
 
-	-- parseGameArguments can only be called after parseOptions.
-	love.parsedGameArguments = love.arg.parseGameArguments(love.rawGameArguments)
+	-- If a game is passed after restart to be launched,
+	-- don't do the normal game discovery logic.
+	if not game_arg then
+		-- Is this one of those fancy "fused" games?
+		can_has_game = pcall(love.filesystem.setSource, exepath)
 
-	local o = love.arg.options
+		-- It's a fused game, don't parse --game argument
+		if can_has_game then
+			love.arg.options.game.set = true
+		end
 
-	local is_fused_game = can_has_game or love.arg.options.fused.set
+		-- Parse options now that we know which options we're looking for.
+		love.arg.parseOptions(love.rawGameArguments)
+
+		-- parseGameArguments can only be called after parseOptions.
+		love.parsedGameArguments = love.arg.parseGameArguments(love.rawGameArguments)
+
+		game_arg = love.arg.options.game[1]
+
+		is_fused_game = can_has_game or love.arg.options.fused.set
+	end
 
 	love.filesystem.setFused(is_fused_game)
 
@@ -85,8 +107,8 @@ function love.boot()
 	local custom_main_file = false
 
 	local identity = ""
-	if not can_has_game and o.game.set and o.game.arg[1] then
-		local nouri = o.game.arg[1]
+	if not is_fused_game and game_arg then
+		local nouri = game_arg
 		local full_source = nouri
 
 		-- Ignore "content://" uri as it's used to open a file-descriptor
