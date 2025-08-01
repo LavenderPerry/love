@@ -94,7 +94,7 @@ function love.boot()
 		-- parseGameArguments can only be called after parseOptions.
 		love.parsedGameArguments = love.arg.parseGameArguments(love.rawGameArguments)
 
-		game_arg = love.arg.options.game[1]
+		game_arg = love.arg.options.game.arg[1]
 
 		is_fused_game = can_has_game or love.arg.options.fused.set
 	end
@@ -107,7 +107,7 @@ function love.boot()
 	local custom_main_file = false
 
 	local identity = ""
-	if not is_fused_game and game_arg then
+	if (not is_fused_game) and game_arg then
 		local nouri = game_arg
 		local full_source = nouri
 
