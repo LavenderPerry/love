@@ -39,6 +39,32 @@ namespace event
 
 #define instance() (Module::getInstance<Event>(Module::M_EVENT))
 
+// Adds the "restart" string to the beginning of arguments,
+// if they don't already have it
+static void args_add_restart(std::vector<Variant> &args) {
+	std::vector<Variant>::const_iterator begin = args.begin();
+	const char *restart = "restart";
+	size_t restartlen = strlen(restart);
+
+	if (args.empty()) {
+		args.emplace(begin, restart, restartlen);
+		return;
+	}
+
+	const Variant& first = *begin;
+
+	if (restartlen <= Variant::MAX_SMALL_STRING_LENGTH) {
+		if (first.getType() != Variant::Type::SMALLSTRING ||
+				strcmp(first.getData().smallstring.str, restart) != 0)
+			args.emplace(begin, restart, restartlen);
+		return;
+	}
+
+	if (first.getType() != Variant::Type::STRING ||
+			strcmp(first.getData().string->str, restart) != 0)
+		args.emplace(begin, restart, restartlen);
+}
+
 static int luax_pushmessage(lua_State *L, const Message &m)
 {
 	luax_pushstring(L, m.name);
@@ -92,6 +118,7 @@ int w_push(lua_State *L)
 	std::string name = luax_checkstring(L, 1);
 	std::vector<Variant> vargs;
 
+
 	int nargs = lua_gettop(L);
 	for (int i = 2; i <= nargs; i++)
 	{
@@ -105,6 +132,15 @@ int w_push(lua_State *L)
 			vargs.clear();
 			return luaL_error(L, "Argument %d can't be stored safely\nExpected boolean, number, string or userdata.", i);
 		}
+	}
+
+	// Pushed quit events should actually be restarts,
+	// unless sent from launcher ("foxglove_quit")
+	std::string quit("quit");
+	if (name.compare(quit) == 0) {
+		args_add_restart(vargs);
+	} else if (name.compare("foxglove_quit") == 0) {
+		name = quit;
 	}
 
 	StrongRef<Message> m(new Message(name, vargs), Acquire::NORETAIN);
@@ -126,6 +162,9 @@ int w_quit(lua_State *L)
 		std::vector<Variant> args;
 		for (int i = 1; i <= std::max(1, lua_gettop(L)); i++)
 			args.push_back(luax_checkvariant(L, i));
+
+		// Same situation as in w_push
+		args_add_restart(args);
 
 		StrongRef<Message> m(new Message("quit", args), Acquire::NORETAIN);
 		instance()->push(m);
