@@ -27,6 +27,7 @@
 
 #include <algorithm>
 
+#include <lua.h>
 // Shove the wrap_Event.lua code directly into a raw string literal.
 static const char event_lua[] =
 #include "wrap_Event.lua"
@@ -39,30 +40,86 @@ namespace event
 
 #define instance() (Module::getInstance<Event>(Module::M_EVENT))
 
+static const char *extract_cstr(Variant v) {
+	switch (v.getType()) {
+		case Variant::Type::SMALLSTRING:
+			return v.getData().smallstring.str;
+		case Variant::Type::STRING:
+			return v.getData().string->str;
+		default:
+			return NULL;
+	}
+}
+
 // Adds the "restart" string to the beginning of arguments,
 // if they don't already have it
-static void args_add_restart(std::vector<Variant> &args) {
-	std::vector<Variant>::const_iterator begin = args.begin();
+// returns if the restart argument was added
+static bool args_add_restart(std::vector<Variant> &args) {
 	const char *restart = "restart";
-	size_t restartlen = strlen(restart);
 
 	if (args.empty()) {
-		args.emplace(begin, restart, restartlen);
-		return;
+		args.emplace_back(restart, strlen(restart));
+		return true;
 	}
 
+	std::vector<Variant>::const_iterator begin = args.begin();
 	const Variant& first = *begin;
+	const char* argstr = extract_cstr(first);
+	if (argstr == NULL || strcmp(argstr, restart) != 0) {
+		args.emplace(begin, restart, strlen(restart));
+		return true;
+	}
 
-	if (restartlen <= Variant::MAX_SMALL_STRING_LENGTH) {
-		if (first.getType() != Variant::Type::SMALLSTRING ||
-				strcmp(first.getData().smallstring.str, restart) != 0)
-			args.emplace(begin, restart, restartlen);
+	return false;
+}
+
+// Changes the restart event argument
+// so that Foxglove will restart the current game,
+// instead of restarting into the launcher
+static void modify_restart_arg(lua_State *L, std::vector<Variant> &args) {
+	Variant prev_restartval;
+	luax_catchexcept(L, [&]() {
+			lua_getglobal(L, "Foxglove_restart");
+			prev_restartval = luax_checkvariant(L, -1);
+	});
+	if (prev_restartval.getType() != Variant::Type::TABLE) {
 		return;
 	}
 
-	if (first.getType() != Variant::Type::STRING ||
-			strcmp(first.getData().string->str, restart) != 0)
-		args.emplace(begin, restart, restartlen);
+	bool has_restartarg = args.size() >= 2;
+	Variant restartval = has_restartarg ? args[1] : Variant();
+	std::vector<std::pair<Variant, Variant>> entries =
+		prev_restartval.getData().table->pairs;
+	bool restartcond_found = false;
+	bool restartval_found = false;
+	const char *restartcond_key = "foxglove_replace_restartval";
+	const char *restartval_key = "foxglove_restartval";
+	for (std::pair<Variant, Variant> &entry : entries) {
+		const char* keystr = extract_cstr(entry.first);
+		if (keystr == NULL) {
+			continue;
+		}
+
+		if (strcmp(keystr, restartcond_key) == 0) {
+			entry.second = Variant(true);
+			restartcond_found = true;
+		} else if (strcmp(keystr, restartval_key) == 0) {
+			entry.second = restartval;
+			restartval_found = true;
+		}
+	}
+	if (!restartcond_found) {
+		entries.emplace_back(Variant(restartcond_key), Variant(true));
+	}
+	if (!restartval_found) {
+		entries.emplace_back(Variant(restartval_key), restartval);
+	}
+
+	if (has_restartarg) {
+		args[1] = prev_restartval;
+	} else {
+		args.push_back(prev_restartval);
+	}
 }
 
 static int luax_pushmessage(lua_State *L, const Message &m)
@@ -137,10 +194,10 @@ int w_push(lua_State *L)
 	// Pushed quit events should actually be restarts,
 	// unless sent from launcher ("foxglove_quit")
 	std::string quit("quit");
-	if (name.compare(quit) == 0) {
-		args_add_restart(vargs);
-	} else if (name.compare("foxglove_quit") == 0) {
+	if (name.compare("foxglove_quit") == 0) {
 		name = quit;
+	} else if (name.compare(quit) == 0 && !args_add_restart(vargs)) {
+		modify_restart_arg(L, vargs);
 	}
 
 	StrongRef<Message> m(new Message(name, vargs), Acquire::NORETAIN);
@@ -164,7 +221,9 @@ int w_quit(lua_State *L)
 			args.push_back(luax_checkvariant(L, i));
 
 		// Same situation as in w_push
-		args_add_restart(args);
+		if (!args_add_restart(args)) {
+			modify_restart_arg(L, args);
+		}
 
 		StrongRef<Message> m(new Message("quit", args), Acquire::NORETAIN);
 		instance()->push(m);
@@ -182,6 +241,8 @@ int w_restart(lua_State *L)
 
 		for (int i = 1; i <= lua_gettop(L); i++)
 			args.push_back(luax_checkvariant(L, i));
+
+		modify_restart_arg(L, args);
 
 		StrongRef<Message> m(new Message("quit", args), Acquire::NORETAIN);
 		instance()->push(m);

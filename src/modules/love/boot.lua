@@ -63,6 +63,7 @@ function love.boot()
 	local game_arg
 
 	-- Handle Foxglove specific values given through a restart.
+	Foxglove_restart = love.restart
 	if type(love.restart) == "table" then
 		if type(love.restart.foxglove_launch_game) == "string" then
 			game_arg = love.restart.foxglove_launch_game
