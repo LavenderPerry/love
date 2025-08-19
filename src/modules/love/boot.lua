@@ -69,7 +69,7 @@ function love.boot()
 			game_arg = love.restart.foxglove_launch_game
 		end
 		if type(love.restart.foxglove_mods) == "table" then
-			-- TODO: apply mods
+			love.foxglove_mods = love.restart.foxglove_mods
 		end
 		if love.restart.foxglove_replace_restartval then
 			love.restart = love.restart.foxglove_restartval
@@ -180,6 +180,69 @@ usage:
 end
 
 function love.init()
+	-- Create directory for patches done by mods
+	local patchdir = "/tmp/foxglove_active_patches"
+
+	-- TODO: move this to game quit code
+	local function rmr(dir)
+		for _, child in ipairs(love.filesystem.getDirectoryItems(dir)) do
+			rmr(dir .. "/" .. child)
+		end
+		love.filesystem.remove(dir)
+	end
+	rmr(patchdir)
+
+	love.filesystem.createDirectory(patchdir)
+
+	-- Load the mods
+	local function applyMod(root, indir)
+		local curdir = root .. "/" .. indir
+		for _, child in ipairs(love.filesystem.getDirectoryItems(curdir)) do
+			local path = indir .. "/" .. child
+			local patchfile = patchdir .. "/" .. path
+			local fullpath = root .. "/" .. path
+			if love.filesystem.getInfo(fullpath, "directory") then
+				love.filesystem.createDirectory(patchfile)
+				applyMod(root, path)
+			else
+				-- Determine the current input file for the mod to patch
+				--
+				-- Have to handle cases where the file hasn't been patched yet
+				-- or the ".lua" extension should be removed from the result
+				local infile
+				if love.filesystem.getInfo(patchfile) then
+					infile = patchfile
+				elseif love.filesystem.getInfo(path) then
+					infile = path
+				else
+					local newpatchfile = patchfile:sub(-4)
+					if love.filesystem.getInfo(newpatchfile) then
+						patchfile = newpatchfile
+						infile = patchfile
+					else
+						path = path:sub(-4)
+						if love.filesystem.getInfo(path) then
+							patchfile = newpatchfile
+							infile = path
+						end
+					end
+				end
+
+				-- Apply the mod and write the resulting patched file
+				local contents = infile and love.filesystem.read(infile) or ""
+				local requirecache = package.loaded[child]
+				package.loaded[child] = nil
+				love.filesystem.mountFullPath(curdir)
+				contents = require(child)(contents)
+				love.filesystem.unmountFullPath(curdir)
+				package.loaded[child] = requirecache
+				love.filesystem.write(patchfile, contents)
+			end
+		end
+	end
+	for _, mod in ipairs(love.foxglove_mods) do
+		applyMod(mod, "")
+	end
 
 	-- Create default configuration settings.
 	-- NOTE: Adding a new module to the modules list
