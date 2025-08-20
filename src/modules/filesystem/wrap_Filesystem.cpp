@@ -155,7 +155,7 @@ int w_mount(lua_State *L)
 int w_mountFullPath(lua_State *L)
 {
 	const char *fullpath = luaL_checkstring(L, 1);
-	const char *mountpoint = lua_tolstring(L, 2); // can be NULL
+	const char *mountpoint = lua_tolstring(L, 2, NULL); // can be NULL
 
 	auto permissions = Filesystem::MOUNT_PERMISSIONS_READ;
 	if (!lua_isnoneornil(L, 3))

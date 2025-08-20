@@ -38,6 +38,7 @@ end
 local no_game_code = false
 local invalid_game_path = nil
 local main_file = "main.lua"
+local patchdir = "/tmp/foxglove_active_patches"
 
 -- This can't be overridden.
 function love.boot()
@@ -180,21 +181,8 @@ usage:
 end
 
 function love.init()
-	-- Create directory for patches done by mods
-	local patchdir = "/tmp/foxglove_active_patches"
-
-	-- TODO: move this to game quit code
-	local function rmr(dir)
-		for _, child in ipairs(love.filesystem.getDirectoryItems(dir)) do
-			rmr(dir .. "/" .. child)
-		end
-		love.filesystem.remove(dir)
-	end
-	rmr(patchdir)
-
 	love.filesystem.createDirectory(patchdir)
 
-	-- Load the mods
 	local function applyMod(root, indir)
 		local curdir = root .. "/" .. indir
 		for _, child in ipairs(love.filesystem.getDirectoryItems(curdir)) do
@@ -209,6 +197,7 @@ function love.init()
 				--
 				-- Have to handle cases where the file hasn't been patched yet
 				-- or the ".lua" extension should be removed from the result
+
 				local infile
 				if love.filesystem.getInfo(patchfile) then
 					infile = patchfile
@@ -229,13 +218,16 @@ function love.init()
 				end
 
 				-- Apply the mod and write the resulting patched file
+
 				local contents = infile and love.filesystem.read(infile) or ""
 				local requirecache = package.loaded[child]
+
 				package.loaded[child] = nil
-				love.filesystem.mountFullPath(curdir)
-				contents = require(child)(contents)
-				love.filesystem.unmountFullPath(curdir)
+				love.filesystem.mountFullPath(root)
+				contents = require(path:gsub("/", "."))(contents)
+				love.filesystem.unmountFullPath(root)
 				package.loaded[child] = requirecache
+
 				love.filesystem.write(patchfile, contents)
 			end
 		end
@@ -243,6 +235,7 @@ function love.init()
 	for _, mod in ipairs(love.foxglove_mods) do
 		applyMod(mod, "")
 	end
+	love.filesystem.mountFullPath(patchdir)
 
 	-- Create default configuration settings.
 	-- NOTE: Adding a new module to the modules list
@@ -552,6 +545,18 @@ return function()
 		inerror = false
 	end
 
+	local function modCleanup()
+		love.filesystem.unmountFullPath(patchdir)
+
+		local function rmr(dir)
+			for _, child in ipairs(love.filesystem.getDirectoryItems(dir)) do
+				rmr(dir .. "/" .. child)
+			end
+			love.filesystem.remove(dir)
+		end
+		rmr(patchdir)
+	end
+
 	local function earlyinit()
 		func = nil
 
@@ -585,10 +590,14 @@ return function()
 			love.event._setDefaultModalDrawCallback(func)
 		end
 		local _, retval, restartvalue = xpcall(func, deferErrhand)
-		if retval then return retval, restartvalue end
+		if retval then
+			modCleanup()
+			return retval, restartvalue
+		end
 		coroutine_yield()
 	end
 
+	modCleanup()
 	return 1
 end
 
