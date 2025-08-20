@@ -181,61 +181,63 @@ usage:
 end
 
 function love.init()
-	love.filesystem.createDirectory(patchdir)
+	if love.foxglove_mods then
+		love.filesystem.createDirectory(patchdir)
 
-	local function applyMod(root, indir)
-		local curdir = root .. "/" .. indir
-		for _, child in ipairs(love.filesystem.getDirectoryItems(curdir)) do
-			local path = indir .. "/" .. child
-			local patchfile = patchdir .. "/" .. path
-			local fullpath = root .. "/" .. path
-			if love.filesystem.getInfo(fullpath, "directory") then
-				love.filesystem.createDirectory(patchfile)
-				applyMod(root, path)
-			else
-				-- Determine the current input file for the mod to patch
-				--
-				-- Have to handle cases where the file hasn't been patched yet
-				-- or the ".lua" extension should be removed from the result
-
-				local infile
-				if love.filesystem.getInfo(patchfile) then
-					infile = patchfile
-				elseif love.filesystem.getInfo(path) then
-					infile = path
+		local function applyMod(root, indir)
+			local curdir = root .. "/" .. indir
+			for _, child in ipairs(love.filesystem.getDirectoryItems(curdir)) do
+				local path = indir .. "/" .. child
+				local patchfile = patchdir .. "/" .. path
+				local fullpath = root .. "/" .. path
+				if love.filesystem.getInfo(fullpath, "directory") then
+					love.filesystem.createDirectory(patchfile)
+					applyMod(root, path)
 				else
-					local newpatchfile = patchfile:sub(-4)
-					if love.filesystem.getInfo(newpatchfile) then
-						patchfile = newpatchfile
+					-- Determine the current input file for the mod to patch
+					--
+					-- Have to handle cases where the file hasn't been patched yet
+					-- or the ".lua" extension should be removed from the result
+
+					local infile
+					if love.filesystem.getInfo(patchfile) then
 						infile = patchfile
+					elseif love.filesystem.getInfo(path) then
+						infile = path
 					else
-						path = path:sub(-4)
-						if love.filesystem.getInfo(path) then
+						local newpatchfile = patchfile:sub(-4)
+						if love.filesystem.getInfo(newpatchfile) then
 							patchfile = newpatchfile
-							infile = path
+							infile = patchfile
+						else
+							path = path:sub(-4)
+							if love.filesystem.getInfo(path) then
+								patchfile = newpatchfile
+								infile = path
+							end
 						end
 					end
+
+					-- Apply the mod and write the resulting patched file
+
+					local contents = infile and love.filesystem.read(infile) or ""
+					local requirecache = package.loaded[child]
+
+					package.loaded[child] = nil
+					love.filesystem.mountFullPath(root)
+					contents = require(path:gsub("/", "."))(contents)
+					love.filesystem.unmountFullPath(root)
+					package.loaded[child] = requirecache
+
+					love.filesystem.write(patchfile, contents)
 				end
-
-				-- Apply the mod and write the resulting patched file
-
-				local contents = infile and love.filesystem.read(infile) or ""
-				local requirecache = package.loaded[child]
-
-				package.loaded[child] = nil
-				love.filesystem.mountFullPath(root)
-				contents = require(path:gsub("/", "."))(contents)
-				love.filesystem.unmountFullPath(root)
-				package.loaded[child] = requirecache
-
-				love.filesystem.write(patchfile, contents)
 			end
 		end
+		for _, mod in ipairs(love.foxglove_mods) do
+			applyMod(mod, "")
+		end
+		love.filesystem.mountFullPath(patchdir)
 	end
-	for _, mod in ipairs(love.foxglove_mods) do
-		applyMod(mod, "")
-	end
-	love.filesystem.mountFullPath(patchdir)
 
 	-- Create default configuration settings.
 	-- NOTE: Adding a new module to the modules list
@@ -546,6 +548,8 @@ return function()
 	end
 
 	local function modCleanup()
+		if not love.foxglove_mods then return end
+
 		love.filesystem.unmountFullPath(patchdir)
 
 		local function rmr(dir)
