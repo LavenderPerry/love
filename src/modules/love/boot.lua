@@ -185,51 +185,44 @@ function love.init()
 		love.filesystem.createDirectory(patchdir)
 
 		local function applyMod(root, indir)
-			local curdir = root .. "/" .. indir
+			local function pathjoin(...) return table.concat({...}, "/") end
+
+			local curdir = pathjoin(root, indir)
 			for _, child in ipairs(love.filesystem.getDirectoryItems(curdir)) do
-				local path = indir .. "/" .. child
-				local patchfile = patchdir .. "/" .. path
-				local fullpath = root .. "/" .. path
+				local path = pathjoin(indir, child)
+				local fullpath = pathjoin(curdir, child)
 				if love.filesystem.getInfo(fullpath, "directory") then
-					love.filesystem.createDirectory(patchfile)
+					love.filesystem.createDirectory(pathjoin(patchdir, path))
 					applyMod(root, path)
 				else
-					-- Determine the current input file for the mod to patch
-					--
-					-- Have to handle cases where the file hasn't been patched yet
-					-- or the ".lua" extension should be removed from the result
-
-					local infile
-					if love.filesystem.getInfo(patchfile) then
-						infile = patchfile
-					elseif love.filesystem.getInfo(path) then
-						infile = path
-					else
-						local newpatchfile = patchfile:sub(-4)
-						if love.filesystem.getInfo(newpatchfile) then
-							patchfile = newpatchfile
-							infile = patchfile
-						else
-							path = path:sub(-4)
-							if love.filesystem.getInfo(path) then
-								patchfile = newpatchfile
-								infile = path
-							end
-						end
+					local module = path:gsub("/", ".")
+					if module:sub(#module - 3) == ".lua" then
+						module = module:sub(-4)
 					end
 
-					-- Apply the mod and write the resulting patched file
-
-					local contents = infile and love.filesystem.read(infile) or ""
-					local requirecache = package.loaded[child]
-
-					package.loaded[child] = nil
+					local requirecache = package.loaded[module]
+					package.loaded[module] = nil
 					love.filesystem.mountFullPath(root)
-					contents = require(path:gsub("/", "."))(contents)
+					local modspec = require(module)
 					love.filesystem.unmountFullPath(root)
-					package.loaded[child] = requirecache
+					package.loaded[module] = requirecache
 
-					love.filesystem.write(patchfile, contents)
+					if type(modspec.file) == "string" then
+						child = modspec.file
+						fullpath = pathjoin(curdir, child)
+					end
+
+					local contents
+					local patchfile = pathjoin(patchdir, child)
+					if love.filesystem.getInfo(patchfile, "file") then
+						contents = love.filesystem.read(patchfile)
+					elseif love.filesystem.getInfo(fullpath, "file") then
+						contents = love.filesystem.read(fullpath)
+					else
+						contents = ""
+					end
+
+					love.filesystem.write(patchfile, modspec.patch(contents))
 				end
 			end
 		end
