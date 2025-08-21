@@ -194,11 +194,17 @@ function love.init()
 				if love.filesystem.getInfo(fullpath, "directory") then
 					love.filesystem.createDirectory(pathjoin(patchdir, path))
 					applyMod(root, path)
-				else
-					local module = path:gsub("/", ".")
-					if module:sub(#module - 3) == ".lua" then
-						module = module:sub(-4)
+				elseif child:sub(#child - 3) == ".lua" then
+					local function getInputFile(a, b)
+						if love.filesystem.getInfo(a, "file") then
+							return a, true
+						end
+						if love.filesystem.getInfo(path, "file") then
+							return b, false
+						end
 					end
+
+					local module = path:gsub("/", "."):sub(-4)
 
 					local requirecache = package.loaded[module]
 					package.loaded[module] = nil
@@ -209,20 +215,19 @@ function love.init()
 
 					if type(modspec.file) == "string" then
 						child = modspec.file
-						fullpath = pathjoin(curdir, child)
+						path = pathjoin(indir, child)
 					end
 
-					local contents
 					local patchfile = pathjoin(patchdir, child)
-					if love.filesystem.getInfo(patchfile, "file") then
-						contents = love.filesystem.read(patchfile)
-					elseif love.filesystem.getInfo(fullpath, "file") then
-						contents = love.filesystem.read(fullpath)
-					else
-						contents = ""
+					local infile, prepatched = getInputFile(patchfile, path)
+					if not infile then
+						patchfile = patchfile:sub(-4)
+						path = path:sub(-4)
+						infile, prepatched = getInputFile(patchfile, path)
 					end
+					local contents = infile and love.filesystem.read(infile) or ""
 
-					love.filesystem.write(patchfile, modspec.patch(contents))
+					love.filesystem.write(patchfile, modspec.patch(path, contents, prepatched))
 				end
 			end
 		end
