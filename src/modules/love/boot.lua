@@ -39,6 +39,9 @@ local no_game_code = false
 local invalid_game_path = nil
 local main_file = "main.lua"
 local patchdir = "/tmp/foxglove_active_patches"
+local patchname = "patches"
+
+local function pathjoin(...) return table.concat({...}, "/") end
 
 -- This can't be overridden.
 function love.boot()
@@ -185,9 +188,7 @@ function love.init()
 		love.filesystem.createDirectory(patchdir)
 
 		local function applyMod(root, indir)
-			local function pathjoin(...) return table.concat({...}, "/") end
-
-			local curdir = pathjoin(root, indir)
+			local curdir = pathjoin(root, patchname, indir)
 			for _, child in ipairs(love.filesystem.getDirectoryItems(curdir)) do
 				local path = pathjoin(indir, child)
 				local fullpath = pathjoin(curdir, child)
@@ -195,7 +196,10 @@ function love.init()
 					love.filesystem.createDirectory(pathjoin(patchdir, path))
 					applyMod(root, path)
 				elseif child:sub(#child - 3) == ".lua" then
-					local module = path:gsub("/", "."):sub(-4)
+					local module = table.concat({
+						patchname,
+						path:gsub("/", "."):sub(-4)
+					}, ".")
 
 					local requirecache = package.loaded[module]
 					package.loaded[module] = nil
@@ -209,7 +213,7 @@ function love.init()
 						path = pathjoin(indir, child)
 					end
 
-					local patchfile = pathjoin(patchdir, child)
+					local patchfile = pathjoin(patchdir, path)
 					local infile
 					local prepatched = false
 					if love.filesystem.getInfo(patchfile, "file") then
@@ -224,9 +228,7 @@ function love.init()
 				end
 			end
 		end
-		for _, mod in ipairs(love.foxglove_mods) do
-			applyMod(mod, "")
-		end
+		for _, mod in ipairs(love.foxglove_mods) do applyMod(mod, "") end
 		love.filesystem.mountFullPath(patchdir)
 	end
 
@@ -545,7 +547,7 @@ return function()
 
 		local function rmr(dir)
 			for _, child in ipairs(love.filesystem.getDirectoryItems(dir)) do
-				rmr(dir .. "/" .. child)
+				rmr(pathjoin(dir, child))
 			end
 			love.filesystem.remove(dir)
 		end
