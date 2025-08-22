@@ -195,15 +195,6 @@ function love.init()
 					love.filesystem.createDirectory(pathjoin(patchdir, path))
 					applyMod(root, path)
 				elseif child:sub(#child - 3) == ".lua" then
-					local function getInputFile(a, b)
-						if love.filesystem.getInfo(a, "file") then
-							return a, true
-						end
-						if love.filesystem.getInfo(path, "file") then
-							return b, false
-						end
-					end
-
 					local module = path:gsub("/", "."):sub(-4)
 
 					local requirecache = package.loaded[module]
@@ -219,11 +210,13 @@ function love.init()
 					end
 
 					local patchfile = pathjoin(patchdir, child)
-					local infile, prepatched = getInputFile(patchfile, path)
-					if not infile then
-						patchfile = patchfile:sub(-4)
-						path = path:sub(-4)
-						infile, prepatched = getInputFile(patchfile, path)
+					local infile
+					local prepatched = false
+					if love.filesystem.getInfo(patchfile, "file") then
+						infile = patchfile
+						prepatched = true
+					elseif love.filesystem.getInfo(path, "file") then
+						infile = path
 					end
 					local contents = infile and love.filesystem.read(infile) or ""
 
