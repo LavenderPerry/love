@@ -95,6 +95,10 @@ static const char callbacks_lua[] =
 #include "callbacks.lua"
 ;
 
+static const char patch_lua[] =
+#include "patch.lua"
+;
+
 static const char boot_lua[] =
 #include "boot.lua"
 ;
@@ -172,6 +176,7 @@ extern "C"
 	extern int luaopen_love_jitsetup(lua_State*);
 	extern int luaopen_love_arg(lua_State*);
 	extern int luaopen_love_callbacks(lua_State*);
+	extern int luaopen_love_patch(lua_State*);
 	extern int luaopen_love_boot(lua_State*);
 
 #ifdef LOVE_ENABLE_LUAHTTPS
@@ -244,6 +249,7 @@ static const luaL_Reg modules[] = {
 	{ "love.jitsetup", luaopen_love_jitsetup },
 	{ "love.arg", luaopen_love_arg },
 	{ "love.callbacks", luaopen_love_callbacks },
+	{ "love.patch", luaopen_love_patch },
 	{ "love.boot", luaopen_love_boot },
 	{ 0, 0 }
 };
@@ -805,6 +811,14 @@ int luaopen_love_arg(lua_State *L)
 int luaopen_love_callbacks(lua_State *L)
 {
 	if (luaL_loadbuffer(L, callbacks_lua, sizeof(callbacks_lua), "=[love \"callbacks.lua\"]") == 0)
+		lua_call(L, 0, 1);
+
+	return 1;
+}
+
+int luaopen_love_patch(lua_State *L)
+{
+	if (luaL_loadbuffer(L, patch_lua, sizeof(patch_lua), "=[love \"patch.lua\"]") == 0)
 		lua_call(L, 0, 1);
 
 	return 1;

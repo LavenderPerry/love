@@ -38,10 +38,13 @@ end
 local no_game_code = false
 local invalid_game_path = nil
 local main_file = "main.lua"
-local patchdir = "/tmp/foxglove_active_patches"
+local patchsubdir = "foxglove_active_patches"
+local tmp = "/tmp"
+local mounttmp = "foxglove_root_tmp"
+local patchondisc = love.path.join(tmp, patchsubdir)
+local patchdir = love.path.join(mounttmp, patchsubdir)
 local patchname = "patches"
-
-local function pathjoin(...) return table.concat({...}, "/") end
+local mods
 
 -- This can't be overridden.
 function love.boot()
@@ -69,11 +72,9 @@ function love.boot()
 	-- Handle Foxglove specific values given through a restart.
 	Foxglove_restart = love.restart
 	if type(love.restart) == "table" then
+		mods = love.restart.foxglove_mods
 		if type(love.restart.foxglove_launch_game) == "string" then
 			game_arg = love.restart.foxglove_launch_game
-		end
-		if type(love.restart.foxglove_mods) == "table" then
-			love.foxglove_mods = love.restart.foxglove_mods
 		end
 		if love.restart.foxglove_replace_restartval then
 			love.restart = love.restart.foxglove_restartval
@@ -184,37 +185,35 @@ usage:
 end
 
 function love.init()
-	if love.foxglove_mods then
-		love.filesystem.createDirectory(patchdir)
+	if type(mods) == "table" and #mods > 0 then
+		require("love.patch") -- library for mods to use
+		love.filesystem.mountFullPath(tmp, mounttmp, "readwrite")
 
 		local function applyMod(root)
+			love.filesystem.mountFullPath(root)
 			local function handleDir(indir)
-				local curdir = pathjoin(root, patchname, indir)
+				local curdir = love.path.join(patchname, indir)
 				for _, child in ipairs(love.filesystem.getDirectoryItems(curdir)) do
-					local path = pathjoin(indir, child)
-					local fullpath = pathjoin(curdir, child)
+					local path = love.path.join(indir, child)
+					local fullpath = love.path.join(curdir, child)
 					if love.filesystem.getInfo(fullpath, "directory") then
-						love.filesystem.createDirectory(pathjoin(patchdir, path))
 						handleDir(path)
-					elseif child:sub(#child - 3) == ".lua" then
-						local module = table.concat({
-							patchname,
-							path:gsub("/", "."):sub(-4)
-						}, ".")
+					elseif child:sub(-4) == ".lua" then
+						love.filesystem.createDirectory(love.path.join(patchdir, indir))
+
+						local module = fullpath:gsub("/", "."):sub(1, -5)
 
 						local requirecache = package.loaded[module]
 						package.loaded[module] = nil
-						love.filesystem.mountFullPath(root)
 						local modspec = require(module)
-						love.filesystem.unmountFullPath(root)
 						package.loaded[module] = requirecache
 
 						if type(modspec.file) == "string" then
 							child = modspec.file
-							path = pathjoin(indir, child)
+							path = love.path.join(indir, child)
 						end
 
-						local patchfile = pathjoin(patchdir, path)
+						local patchfile = love.path.join(patchdir, path)
 						local infile
 						local prepatched = false
 						if love.filesystem.getInfo(patchfile, "file") then
@@ -227,19 +226,21 @@ function love.init()
 
 						love.filesystem.write(
 							patchfile,
-							modspec.patch(path, contents, prepatched)
+							modspec.patch(contents, path, prepatched)
 						)
 					end
 				end
 			end
 			handleDir("")
+			love.filesystem.unmountFullPath(root)
 			love.filesystem.mountFullPath(
 				root,
-				pathjoin("foxglove_mods", root:match("^.+/(.+)%."))
+				love.path.join("foxglove_mods", root:match("^.+/([^%.]+)"))
 			)
 		end
-		for _, mod in ipairs(love.foxglove_mods) do applyMod(mod) end
-		love.filesystem.mountFullPath(patchdir)
+		for _, mod in ipairs(mods) do applyMod(mod) end
+		love.filesystem.unmountFullPath(tmp)
+		love.filesystem.mountFullPath(patchondisc)
 	end
 
 	-- Create default configuration settings.
@@ -551,20 +552,24 @@ return function()
 	end
 
 	local function modCleanup()
-		if not love.foxglove_mods then return end
+		if not mods then return end
 
-		love.filesystem.unmountFullPath(patchdir)
-		for _, mod in ipairs(love.foxglove_mods) do
+		love.filesystem.unmountFullPath(patchondisc)
+		for _, mod in ipairs(mods) do
 			love.filesystem.unmountFullPath(mod)
 		end
 
+		love.filesystem.mountFullPath(tmp, mounttmp, "readwrite")
+
 		local function rmr(dir)
 			for _, child in ipairs(love.filesystem.getDirectoryItems(dir)) do
-				rmr(pathjoin(dir, child))
+				rmr(love.path.join(dir, child))
 			end
 			love.filesystem.remove(dir)
 		end
 		rmr(patchdir)
+
+		love.filesystem.unmountFullPath(tmp)
 	end
 
 	local function earlyinit()

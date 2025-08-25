@@ -89,6 +89,17 @@ function love.path.leaf(p)
 	return last
 end
 
+-- Joins parts of a path together
+function love.path.join(...)
+	local components = {...}
+	for i, component in ipairs(components) do
+		if component == "" then
+			table.remove(components, i)
+		end
+	end
+	return table.concat(components, "/")
+end
+
 -- Finds the key in the table with the lowest integral index. The lowest
 -- will typically the executable, for instance "lua5.1.exe".
 function love.arg.getLow(a)
