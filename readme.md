@@ -1,8 +1,8 @@
 This is the version of LÖVE that Foxglove uses.
 
 Changes:
-- [] support for modding
-- [] APIs for making game launchers
+- support for modding
+- APIs for making game launchers
 
 Original readme
 ---------------
