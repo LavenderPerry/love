@@ -150,6 +150,9 @@ function love.createhandlers()
 		sensorupdated = function (sensorType, x, y, z)
 			if love.sensorupdated then return love.sensorupdated(sensorType, x, y, z) end
 		end,
+		themechanged = function ()
+			if love.themechanged then return love.themechanged() end
+		end,
 	}, {
 		__index = function(self, name)
 			error("Unknown event: " .. name)
@@ -274,7 +277,7 @@ function love.errorhandler(msg)
 
 	table.insert(err, "\n")
 
-	for l in trace:gmatch("(.-)\n") do
+	for l in trace:gmatch("([^\n]+)") do
 		if not l:match("boot.lua") then
 			l = l:gsub("stack traceback:", "Traceback\n")
 			table.insert(err, l)
@@ -310,7 +313,8 @@ function love.errorhandler(msg)
 
 		for e, a, b, c in love.event.poll() do
 			if e == "quit" then
-				return 1
+				-- Also handle restart args.
+				return a or 1, b
 			elseif e == "keypressed" and a == "escape" then
 				return 1
 			elseif e == "keypressed" and a == "c" and love.keyboard.isDown("lctrl", "rctrl") then
